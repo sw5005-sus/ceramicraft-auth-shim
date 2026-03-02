@@ -66,13 +66,20 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug: Print all claims
+	log.Printf("Token Parsed. Claims found: %v", claims)
+
 	userID, ok := claims[claimKey].(string)
 	if !ok || userID == "" {
-		log.Printf("Claim %s not found or empty", claimKey)
-		// It might be nested or different type, try to be robust?
-		// But for now strict check.
-		http.Error(w, "User ID claim missing", http.StatusForbidden)
-		return
+		// Fallback: Try standard "sub" claim if custom claim is missing (for testing purposes)
+		if sub, ok := claims["sub"].(string); ok && sub != "" {
+			log.Printf("Custom claim missing, falling back to 'sub': %s", sub)
+			userID = sub
+		} else {
+			log.Printf("Claim %s not found or empty", claimKey)
+			http.Error(w, "User ID claim missing", http.StatusForbidden)
+			return
+		}
 	}
 
 	// Important: Set the header for the upstream service
