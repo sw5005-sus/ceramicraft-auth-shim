@@ -10,7 +10,9 @@ import (
 )
 
 const defaultPort = "8080"
-const claimKey = "https://pi-pottery.com/userid"
+const metadataKey = "urn:zitadel:iam:user:metadata"
+const localUserIDKey = "local_userid"
+const expectedIssuer = "https://cerami-t6ihrd.us1.zitadel.cloud"
 
 func main() {
 	port := os.Getenv("PORT")
@@ -66,17 +68,30 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Debug: Print all claims
-	log.Printf("Token Parsed. Claims found: %v", claims)
+	// Validate Issuer
+	if iss, ok := claims["iss"].(string); ok {
+		if iss != expectedIssuer {
+			log.Printf("Warning: Issuer mismatch. Expected %s, got %s", expectedIssuer, iss)
+			// Decide if we want to fail strictly or just log. For now, let's log.
+		}
+	}
 
-	userID, ok := claims[claimKey].(string)
-	if !ok || userID == "" {
-		// Fallback: Try standard "sub" claim if custom claim is missing (for testing purposes)
+	var userID string
+
+	// Try to extract from ZITADEL metadata
+	if metadata, ok := claims[metadataKey].(map[string]interface{}); ok {
+		if id, ok := metadata[localUserIDKey].(string); ok {
+			userID = id
+		}
+	}
+
+	// Fallback: Try standard "sub" claim
+	if userID == "" {
 		if sub, ok := claims["sub"].(string); ok && sub != "" {
-			log.Printf("Custom claim missing, falling back to 'sub': %s", sub)
+			log.Printf("Custom metadata claim missing, falling back to 'sub': %s", sub)
 			userID = sub
 		} else {
-			log.Printf("Claim %s not found or empty", claimKey)
+			log.Printf("Claim %s -> %s not found or empty", metadataKey, localUserIDKey)
 			http.Error(w, "User ID claim missing", http.StatusForbidden)
 			return
 		}
